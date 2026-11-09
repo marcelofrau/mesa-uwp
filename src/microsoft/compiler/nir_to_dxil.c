@@ -6391,7 +6391,10 @@ void dxil_fill_validation_state(struct ntd_context *ctx,
       psv2->num_threads_x = MAX2(ctx->shader->info.workgroup_size[0], 1);
       psv2->num_threads_y = MAX2(ctx->shader->info.workgroup_size[1], 1);
       psv2->num_threads_z = MAX2(ctx->shader->info.workgroup_size[2], 1);
-      if (ctx->shader->info.min_subgroup_size == ctx->shader->info.max_subgroup_size &&
+      /* Must match emit_metadata(): WaveSize is only emitted for DXIL 1.6+,
+       * otherwise the validator rejects the PSV0/module mismatch. */
+      if (ctx->mod.minor_version >= 6 &&
+          ctx->shader->info.min_subgroup_size == ctx->shader->info.max_subgroup_size &&
           ctx->shader->info.min_subgroup_size == ctx->shader->info.api_subgroup_size &&
           ctx->shader->info.min_subgroup_size > 1) {
          psv0->max_expected_wave_lane_count = ctx->shader->info.min_subgroup_size;
