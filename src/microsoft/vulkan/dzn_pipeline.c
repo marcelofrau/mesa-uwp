@@ -437,7 +437,9 @@ dzn_pipeline_compile_shader(struct dzn_device *device,
       /* Don't lower 16-bit types if they can only come from min-precision */
          (device->vk.enabled_extensions.KHR_shader_float16_int8 ||
           device->vk.enabled_features.shaderFloat16 ||
-          device->vk.enabled_features.shaderInt16),
+          device->vk.enabled_features.shaderInt16 ||
+          device->vk.enabled_features.storageBuffer16BitAccess ||
+          device->vk.enabled_features.storageBuffer8BitAccess),
       .shader_model_max = dzn_get_shader_model(pdev),
       .input_clip_size = input_clip_size,
       .advanced_texture_ops = pdev->options14.AdvancedTextureOpsSupported,

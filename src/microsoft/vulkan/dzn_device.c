@@ -99,7 +99,8 @@ static void
 dzn_physical_device_get_extensions(struct dzn_physical_device *pdev)
 {
    pdev->vk.supported_extensions = (struct vk_device_extension_table) {
-      .KHR_16bit_storage                     = pdev->options4.Native16BitShaderOpsSupported,
+      /* Without native 16-bit ops, narrow SSBO access is lowered to 32-bit */
+      .KHR_16bit_storage                     = true,
       .KHR_bind_memory2                      = true,
       .KHR_buffer_device_address             = pdev->shader_model >= D3D_SHADER_MODEL_6_6,
       .KHR_create_renderpass2                = true,
@@ -668,6 +669,10 @@ dzn_physical_device_get_features(const struct dzn_physical_device *pdev,
       !(instance->debug_flags & DZN_DEBUG_NO_BINDLESS);
    bool support_8bit = instance->drirc.debug.enable_8bit_loads_stores &&
       pdev->options4.Native16BitShaderOpsSupported;
+   /* SSBO storage only: without native 16-bit ops, nir_to_dxil lowers narrow
+    * buffer access to 32-bit (lower_int16). Arithmetic, UBO and push-constant
+    * access stay tied to native support. */
+   bool support_8bit_storage = instance->drirc.debug.enable_8bit_loads_stores;
 
    *features = (struct vk_features) {
       .robustBufferAccess = true, /* This feature is mandatory */
@@ -726,7 +731,7 @@ dzn_physical_device_get_features(const struct dzn_physical_device *pdev,
       .variableMultisampleRate = false,
       .inheritedQueries = false,
 
-      .storageBuffer16BitAccess           = pdev->options4.Native16BitShaderOpsSupported,
+      .storageBuffer16BitAccess           = true,
       .uniformAndStorageBuffer16BitAccess = pdev->options4.Native16BitShaderOpsSupported,
       .storagePushConstant16              = false,
       .storageInputOutput16               = false,
@@ -741,7 +746,7 @@ dzn_physical_device_get_features(const struct dzn_physical_device *pdev,
 
       .samplerMirrorClampToEdge           = true,
       .drawIndirectCount                  = true,
-      .storageBuffer8BitAccess            = support_8bit,
+      .storageBuffer8BitAccess            = support_8bit_storage,
       .uniformAndStorageBuffer8BitAccess  = support_8bit,
       .storagePushConstant8               = support_8bit,
       .shaderBufferInt64Atomics           = false,
@@ -1176,8 +1181,7 @@ dzn_physical_device_create(struct vk_instance *instance,
       pdev->options4.Native16BitShaderOpsSupported = false;
 
    dzn_physical_device_get_extensions(pdev);
-   if (dzn_instance->drirc.debug.enable_8bit_loads_stores &&
-       pdev->options4.Native16BitShaderOpsSupported)
+   if (dzn_instance->drirc.debug.enable_8bit_loads_stores)
       pdev->vk.supported_extensions.KHR_8bit_storage = true;
    if (dzn_instance->debug_flags & DZN_DEBUG_NO_BINDLESS)
       pdev->vk.supported_extensions.EXT_descriptor_indexing = false;
