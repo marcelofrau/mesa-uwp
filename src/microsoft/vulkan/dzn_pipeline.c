@@ -408,6 +408,19 @@ enum dxil_shader_model
    return ((pdev->shader_model & 0xf0) << 12) | (pdev->shader_model & 0xf);
 }
 
+/* nir_to_dxil's default logger ends in UNREACHABLE(), which is undefined
+ * behaviour in release builds. Log the reason and let it return false. */
+static void
+dzn_nir_to_dxil_log(void *priv, const char *msg)
+{
+   mesa_loge("nir_to_dxil: %s", msg);
+}
+
+static const struct dxil_logger dzn_nir_to_dxil_logger = {
+   .priv = NULL,
+   .log = dzn_nir_to_dxil_log,
+};
+
 static VkResult
 dzn_pipeline_compile_shader(struct dzn_device *device,
                             nir_shader *nir,
@@ -439,10 +452,12 @@ dzn_pipeline_compile_shader(struct dzn_device *device,
    if (instance->debug_flags & DZN_DEBUG_NIR)
       nir_print_shader(nir, stderr);
 
-   if (nir_to_dxil(nir, &opts, NULL, &dxil_blob)) {
+   if (nir_to_dxil(nir, &opts, &dzn_nir_to_dxil_logger, &dxil_blob)) {
       blob_finish_get_buffer(&dxil_blob, (void **)&slot->pShaderBytecode,
                              (size_t *)&slot->BytecodeLength);
    } else {
+      mesa_loge("dzn: NIR to DXIL failed for %s shader",
+                _mesa_shader_stage_to_string(nir->info.stage));
       result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
 
@@ -480,6 +495,9 @@ dzn_pipeline_compile_shader(struct dzn_device *device,
                "== END ==========================================================\n",
                err);
          ralloc_free(err);
+      } else {
+         mesa_loge("dzn: DXIL validation failed for %s shader (no validator message)",
+                   _mesa_shader_stage_to_string(nir->info.stage));
       }
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
@@ -2061,6 +2079,7 @@ dzn_graphics_pipeline_create(struct dzn_device *device,
                                                &IID_ID3D12PipelineState,
                                                (void **)&pipeline->base.state);
       if (FAILED(hres)) {
+         mesa_loge("dzn: graphics CreatePipelineState failed: hr=0x%08lx", (unsigned long)hres);
          ret = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
          goto out;
       }
@@ -2613,10 +2632,13 @@ dzn_compute_pipeline_create(struct dzn_device *device,
    if (ret != VK_SUCCESS)
       goto out;
 
-   if (FAILED(ID3D12Device4_CreatePipelineState(device->dev, &stream_desc,
-                                                &IID_ID3D12PipelineState,
-                                                (void **)&pipeline->base.state)))
+   HRESULT hres = ID3D12Device4_CreatePipelineState(device->dev, &stream_desc,
+                                                    &IID_ID3D12PipelineState,
+                                                    (void **)&pipeline->base.state);
+   if (FAILED(hres)) {
+      mesa_loge("dzn: compute CreatePipelineState failed: hr=0x%08lx", (unsigned long)hres);
       ret = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
 
 out:
    free((void *)shader.pShaderBytecode);
