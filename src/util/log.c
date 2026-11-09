@@ -166,6 +166,15 @@ mesa_log_init_once(void)
          mesa_log_control |= MESA_LOG_CONTROL_FILE;
       }
    }
+#else
+   /* UWP apps have no stderr and OutputDebugString needs a debugger, so a
+    * file the app can read back (e.g. in LocalState) is the only sink. */
+   const char *log_file = os_get_option("MESA_LOG_FILE");
+   FILE *fp = log_file ? fopen(log_file, "w") : NULL;
+   if (fp) {
+      mesa_log_file = fp;
+      mesa_log_control |= MESA_LOG_CONTROL_FILE;
+   }
 #endif
 
 #if DETECT_OS_POSIX
