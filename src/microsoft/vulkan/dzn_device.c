@@ -2595,8 +2595,16 @@ deduce_heap_properties_from_memory(struct dzn_physical_device *pdevice,
       ((mem_type->propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) &&
        !pdevice->architecture.UMA) ?
       D3D12_MEMORY_POOL_L1 : D3D12_MEMORY_POOL_L0;
+#ifdef _XBOX_UWP
+   /* On Xbox Series, CPU writes through WRITE_BACK mappings are not seen by
+    * the GPU (black frames). Only types that ask for HOST_CACHED (readback)
+    * get WRITE_BACK; plain host-visible types stay write-combined. */
+   const bool cache_coherent_uma = false;
+#else
+   const bool cache_coherent_uma = pdevice->architecture.CacheCoherentUMA;
+#endif
    if ((mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) ||
-       ((mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && pdevice->architecture.CacheCoherentUMA)) {
+       ((mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && cache_coherent_uma)) {
       properties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
    } else if (mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
       properties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_COMBINE;
