@@ -188,6 +188,7 @@ static const struct debug_control dzn_debug_options[] = {
    { "nobindless", DZN_DEBUG_NO_BINDLESS },
    { "experimental", DZN_DEBUG_EXPERIMENTAL },
    { "multiview", DZN_DEBUG_MULTIVIEW },
+   { "no16bit", DZN_DEBUG_NO16BIT },
    { NULL, 0 }
 };
 
@@ -1169,6 +1170,10 @@ dzn_physical_device_create(struct vk_instance *instance,
 
    if (dzn_instance->debug_flags & DZN_DEBUG_MULTIVIEW)
       pdev->options3.ViewInstancingTier = D3D12_VIEW_INSTANCING_TIER_NOT_SUPPORTED;
+
+   /* Reproduce GPUs without native 16-bit ops (e.g. Xbox) on any device */
+   if (dzn_instance->debug_flags & DZN_DEBUG_NO16BIT)
+      pdev->options4.Native16BitShaderOpsSupported = false;
 
    dzn_physical_device_get_extensions(pdev);
    if (dzn_instance->drirc.debug.enable_8bit_loads_stores &&
