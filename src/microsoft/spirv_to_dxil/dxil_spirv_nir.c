@@ -855,6 +855,8 @@ merge_ubos_and_ssbos(nir_shader *nir)
    nir_foreach_variable_with_modes_safe(var, nir, nir_var_mem_ubo | nir_var_mem_ssbo) {
       nir_variable *other_var = NULL;
       nir_foreach_variable_with_modes(var2, nir, var->data.mode) {
+         if (var == var2)
+            continue;
          if (var->data.descriptor_set == var2->data.descriptor_set &&
              var->data.binding == var2->data.binding) {
             other_var = var2;
@@ -885,13 +887,14 @@ merge_ubos_and_ssbos(nir_shader *nir)
          }
 
          var->type = glsl_array_type(struct_type, desc_array_size, 0);
-         
-         /* An ssbo is non-writeable if all aliased vars are non-writeable */
-         if (var->data.mode == nir_var_mem_ssbo)
-            var->data.access &= ~(other_var->data.access & ACCESS_NON_WRITEABLE);
-
-         exec_node_remove(&other_var->node);
       }
+
+      /* An ssbo is non-writeable if all aliased vars are non-writeable */
+      if (var->data.mode == nir_var_mem_ssbo &&
+          !(other_var->data.access & ACCESS_NON_WRITEABLE))
+         var->data.access &= ~ACCESS_NON_WRITEABLE;
+
+      exec_node_remove(&other_var->node);
    }
    nir_shader_preserve_all_metadata(nir);
    return progress;

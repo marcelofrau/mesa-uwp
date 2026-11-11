@@ -222,11 +222,13 @@ dxil_spirv_nir_lower_bindless(nir_shader *nir, struct dxil_spirv_nir_lower_bindl
     * and then forward to the intrinsics that reference them. */
    bool ret = dxil_nir_guess_image_formats(nir);
 
-   ret |= nir_shader_instructions_pass(nir, lower_bindless_instr,
-                                       nir_metadata_control_flow |
-                                       nir_metadata_loop_analysis,
-                                       options);
-   ret |= nir_remove_dead_derefs(nir);
+   if (nir_shader_instructions_pass(nir, lower_bindless_instr,
+                                    nir_metadata_control_flow |
+                                    nir_metadata_loop_analysis,
+                                    options))
+      ret = true;
+   if (nir_remove_dead_derefs(nir))
+      ret = true;
 
    unsigned descriptor_sets = 0;
    const nir_variable_mode modes = nir_var_mem_ubo | nir_var_mem_ssbo | nir_var_image | nir_var_uniform;
@@ -242,7 +244,9 @@ dxil_spirv_nir_lower_bindless(nir_shader *nir, struct dxil_spirv_nir_lower_bindl
       .can_remove_var = can_remove_var,
       .can_remove_var_data = options
    };
-   ret |= nir_remove_dead_variables(nir, modes, &dead_var_options);
+   bool removed_vars = nir_remove_dead_variables(nir, modes, &dead_var_options);
+   if (removed_vars)
+      ret = true;
 
    if (!descriptor_sets)
       return ret;

@@ -4496,7 +4496,7 @@ emit_load_vulkan_descriptor(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 
       nir_variable *var = nir_get_binding_variable(ctx->shader, nir_chase_binding(intr->src[0]));
       if (resource_class == DXIL_RESOURCE_CLASS_UAV &&
-          (var->data.access & ACCESS_NON_WRITEABLE))
+          var && (var->data.access & ACCESS_NON_WRITEABLE))
          resource_class = DXIL_RESOURCE_CLASS_SRV;
 
       const struct dxil_value *index_value = get_src(ctx, &intr->src[0], 0, nir_type_uint32);
