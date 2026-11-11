@@ -2543,7 +2543,7 @@ dzn_compute_pipeline_compile_shader(struct dzn_device *device,
       _mesa_blake3_final(&nir_hash_ctx, nir_hash);
    }
    nir_shader_compiler_options nir_opts;
-   const unsigned supported_bit_sizes = 16 | 32 | 64;
+   const unsigned supported_bit_sizes = (pdev->options4.Native16BitShaderOpsSupported ? 16 : 0) | 32 | 64;
    dxil_get_nir_compiler_options(&nir_opts, dzn_get_shader_model(pdev), supported_bit_sizes, supported_bit_sizes);
    struct dzn_nir_options options = {
       .nir_opts = &nir_opts,

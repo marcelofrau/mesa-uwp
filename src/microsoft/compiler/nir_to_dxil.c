@@ -174,6 +174,8 @@ dxil_get_nir_compiler_options(nir_shader_compiler_options *options,
                               unsigned supported_float_sizes)
 {
    *options = nir_options;
+   if (!(supported_int_sizes & 16) || !(supported_float_sizes & 16))
+      options->support_16bit_alu = false;
    if (!(supported_int_sizes & 64)) {
       options->lower_pack_64_2x32_split = false;
       options->lower_unpack_64_2x32_split = false;

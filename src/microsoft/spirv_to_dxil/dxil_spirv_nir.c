@@ -856,7 +856,7 @@ merge_ubos_and_ssbos(nir_shader *nir)
       nir_variable *other_var = NULL;
       nir_foreach_variable_with_modes(var2, nir, var->data.mode) {
          if (var == var2)
-            continue;
+            break;
          if (var->data.descriptor_set == var2->data.descriptor_set &&
              var->data.binding == var2->data.binding) {
             other_var = var2;
@@ -1036,7 +1036,7 @@ dxil_spirv_nir_passes(nir_shader *nir,
       NIR_PASS(_, nir, nir_split_struct_vars, nir_var_mem_shared);
       NIR_PASS(_, nir, dxil_nir_flatten_var_arrays, nir_var_mem_shared);
       NIR_PASS(_, nir, dxil_nir_lower_var_bit_size, nir_var_mem_shared,
-                 conf->shader_model_max >= SHADER_MODEL_6_2 ? 16 : 32, 64);
+                 (conf->shader_model_max >= SHADER_MODEL_6_2 && nir->options->support_16bit_alu) ? 16 : 32, 64);
    }
 
    NIR_PASS(_, nir, dxil_nir_lower_int_cubemaps, false);
@@ -1102,7 +1102,7 @@ dxil_spirv_nir_passes(nir_shader *nir,
    NIR_PASS(_, nir, nir_split_struct_vars, nir_var_function_temp);
    NIR_PASS(_, nir, dxil_nir_flatten_var_arrays, nir_var_function_temp);
    NIR_PASS(_, nir, dxil_nir_lower_var_bit_size, nir_var_function_temp,
-              conf->shader_model_max >= SHADER_MODEL_6_2 ? 16 : 32, 64);
+              (conf->shader_model_max >= SHADER_MODEL_6_2 && nir->options->support_16bit_alu) ? 16 : 32, 64);
 
    NIR_PASS(_, nir, nir_lower_doubles, NULL, nir->options->lower_doubles_options);
 
