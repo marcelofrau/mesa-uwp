@@ -534,7 +534,9 @@ dzn_physical_device_init_memory(struct dzn_physical_device *pdev)
 
    if (pdev->architecture.UMA) {
       /* All memory is considered device-local for UMA even though it's just RAM */
+#ifndef _XBOX_UWP
       ram_device_local_property = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+#endif
       ram_device_local_heap_flag = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
    }
 
@@ -545,7 +547,9 @@ dzn_physical_device_init_memory(struct dzn_physical_device *pdev)
 
    /* Three non-device-local memory types: host non-visible, host write-combined, and host cached */
    mem->memoryTypes[mem->memoryTypeCount++] = (VkMemoryType){
-      .propertyFlags = ram_device_local_property,
+      .propertyFlags = pdev->architecture.UMA ?
+                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT :
+                       ram_device_local_property,
       .heapIndex = mem->memoryHeapCount - 1,
    };
    mem->memoryTypes[mem->memoryTypeCount++] = (VkMemoryType){
@@ -784,7 +788,8 @@ dzn_physical_device_get_features(const struct dzn_physical_device *pdev,
       .separateDepthStencilLayouts        = true,
       .hostQueryReset                     = true,
       .timelineSemaphore                  = true,
-      .bufferDeviceAddress                = pdev->shader_model >= D3D_SHADER_MODEL_6_6,
+      .bufferDeviceAddress                = pdev->shader_model >= D3D_SHADER_MODEL_6_6 &&
+                                            !(instance->debug_flags & DZN_DEBUG_NO_BINDLESS),
       .bufferDeviceAddressCaptureReplay   = false,
       .bufferDeviceAddressMultiDevice     = false,
       .vulkanMemoryModel                  = false,
@@ -801,7 +806,9 @@ dzn_physical_device_get_features(const struct dzn_physical_device *pdev,
       .privateData                        = true,
       .shaderDemoteToHelperInvocation     = false,
       .shaderTerminateInvocation          = false,
-      .subgroupSizeControl                = pdev->options1.WaveOps && pdev->shader_model >= D3D_SHADER_MODEL_6_6,
+      .subgroupSizeControl                = pdev->options1.WaveOps &&
+                                            pdev->shader_model >= D3D_SHADER_MODEL_6_6 &&
+                                            !(instance->debug_flags & DZN_DEBUG_NO16BIT),
       .computeFullSubgroups               = true,
       .synchronization2                   = true,
       .textureCompressionASTC_HDR         = false,
@@ -828,9 +835,14 @@ dzn_physical_device_get_properties(const struct dzn_physical_device *pdev,
    VkPhysicalDeviceType devtype = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
    if (pdev->desc.is_warp)
       devtype = VK_PHYSICAL_DEVICE_TYPE_CPU;
+#ifdef _XBOX_UWP
+   else
+      devtype = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+#else
    else if (!pdev->architecture.UMA) {
       devtype = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
    }
+#endif
 
    *properties = (struct vk_properties){
       .apiVersion = DZN_API_VERSION,
@@ -1183,8 +1195,10 @@ dzn_physical_device_create(struct vk_instance *instance,
    dzn_physical_device_get_extensions(pdev);
    if (dzn_instance->drirc.debug.enable_8bit_loads_stores)
       pdev->vk.supported_extensions.KHR_8bit_storage = true;
-   if (dzn_instance->debug_flags & DZN_DEBUG_NO_BINDLESS)
+   if (dzn_instance->debug_flags & DZN_DEBUG_NO_BINDLESS) {
       pdev->vk.supported_extensions.EXT_descriptor_indexing = false;
+      pdev->vk.supported_extensions.KHR_buffer_device_address = false;
+   }
    dzn_physical_device_get_features(pdev, &pdev->vk.supported_features);
    dzn_physical_device_get_properties(pdev, &pdev->vk.properties);
 
@@ -2597,14 +2611,18 @@ deduce_heap_properties_from_memory(struct dzn_physical_device *pdevice,
       D3D12_MEMORY_POOL_L1 : D3D12_MEMORY_POOL_L0;
 #ifdef _XBOX_UWP
    /* On Xbox Series, CPU writes through WRITE_BACK mappings are not seen by
-    * the GPU (black frames). Only types that ask for HOST_CACHED (readback)
-    * get WRITE_BACK; plain host-visible types stay write-combined. */
+    * the GPU, and Dozen's Flush/InvalidateMappedMemoryRanges are no-ops.
+    * Keep all host-visible memory write-combined so CPU<->GPU accesses do
+    * not sit in incoherent CPU cache lines. */
+   const bool allow_write_back = false;
    const bool cache_coherent_uma = false;
 #else
+   const bool allow_write_back = true;
    const bool cache_coherent_uma = pdevice->architecture.CacheCoherentUMA;
 #endif
-   if ((mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) ||
-       ((mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && cache_coherent_uma)) {
+   if (allow_write_back &&
+       ((mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) ||
+        ((mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && cache_coherent_uma))) {
       properties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
    } else if (mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
       properties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_COMBINE;
