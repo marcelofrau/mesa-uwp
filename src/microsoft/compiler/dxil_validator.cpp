@@ -5,6 +5,7 @@
 
 #include "util/ralloc.h"
 #include "util/u_debug.h"
+#include "util/log.h"
 #include "util/compiler.h"
 
 #include "dxcapi.h"
@@ -302,24 +303,56 @@ public:
 bool
 dxil_validate_module(struct dxil_validator *val, void *data, size_t size, char **error)
 {
-   if (!val)
+   if (error)
+      *error = NULL;
+   if (!val) {
+      mesa_loge("DXIL: validator is null");
       return false;
+   }
 
    ShaderBlob source(data, size);
 
    ComPtr<IDxcOperationResult> result;
-   val->dxc_validator->Validate(&source, DxcValidatorFlags_InPlaceEdit,
-                                &result);
+   HRESULT call_hr = val->dxc_validator->Validate(&source, DxcValidatorFlags_InPlaceEdit,
+                                                  &result);
+   if (FAILED(call_hr) || !result) {
+      mesa_loge("DXIL: Validate call hr=0x%08lx result=%s",
+                (unsigned long)call_hr, result ? "present" : "null");
+      return false;
+   }
 
    HRESULT hr;
-   result->GetStatus(&hr);
+   HRESULT status_hr = result->GetStatus(&hr);
+   if (FAILED(status_hr)) {
+      mesa_loge("DXIL: GetStatus call hr=0x%08lx", (unsigned long)status_hr);
+      return false;
+   }
 
    if (FAILED(hr) && error) {
+      mesa_loge("DXIL: validation status=0x%08lx bytes=%llu library=%s",
+                (unsigned long)hr, (unsigned long long)size,
+                val->dxc_library ? "present" : "missing");
+      ComPtr<IDxcBlobEncoding> raw_error;
+      HRESULT error_hr = result->GetErrorBuffer(raw_error.GetAddressOf());
+      BOOL known = FALSE;
+      UINT32 codepage = 0;
+      HRESULT encoding_hr = raw_error ? raw_error->GetEncoding(&known, &codepage) : E_FAIL;
+      size_t error_size = raw_error ? raw_error->GetBufferSize() : 0;
+      mesa_loge("DXIL: error-buffer hr=0x%08lx bytes=%llu encoding-hr=0x%08lx known=%d codepage=%u",
+                (unsigned long)error_hr, (unsigned long long)error_size,
+                (unsigned long)encoding_hr, known, codepage);
+      if (SUCCEEDED(error_hr) && SUCCEEDED(encoding_hr) && known && codepage == DXC_CP_UTF8 &&
+          error_size && raw_error->GetBufferPointer()) {
+         const char *raw_str = (const char *)raw_error->GetBufferPointer();
+         size_t len = raw_str[error_size - 1] == '\0' ? error_size - 1 : error_size;
+         *error = ralloc_strndup(val, raw_str, len);
+         mesa_loge("DXIL: validator detail: %s", *error ? *error : "(alloc failed)");
+      }
       /* try to resolve error message */
-      *error = NULL;
       if (!val->dxc_library) {
-         debug_printf("DXIL: validation failed, but lacking IDxcLibrary"
-                      "from dxcompiler.dll for proper diagnostics.\n");
+         if (!*error)
+            debug_printf("DXIL: validation failed, but lacking IDxcLibrary"
+                         "from dxcompiler.dll for proper diagnostics.\n");
          return false;
       }
 
@@ -333,6 +366,7 @@ dxil_validate_module(struct dxil_validator *val, void *data, size_t size, char *
       else {
          char *str = reinterpret_cast<char *>(blob_utf8->GetBufferPointer());
          str[blob_utf8->GetBufferSize() - 1] = 0;
+         ralloc_free(*error);
          *error = ralloc_strdup(val, str);
       }
    }
