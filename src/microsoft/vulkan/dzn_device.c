@@ -1226,6 +1226,15 @@ dzn_physical_device_create(struct vk_instance *instance,
       pdev->options13.UnrestrictedBufferTextureCopyPitchSupported = false;
    }
 
+   /* Clamp the shader model (hex, e.g. 0x65) so a PC compiles the same DXIL as a lower-SM console. */
+   const char *g64_max_sm = os_get_option("DZN_G64_MAX_SHADER_MODEL");
+   if (g64_max_sm) {
+      unsigned long sm = strtoul(g64_max_sm, NULL, 16);
+      if (sm >= D3D_SHADER_MODEL_6_1 && sm < (unsigned long)pdev->shader_model)
+         pdev->shader_model = (D3D_SHADER_MODEL)sm;
+      fprintf(stderr, "G64-DZN-CAPS: DZN_G64_MAX_SHADER_MODEL=%s -> sm=0x%x\n", g64_max_sm, pdev->shader_model);
+   }
+
    /* Reproduce GPUs without native 16-bit ops (e.g. Xbox) on any device */
    if (dzn_instance->debug_flags & DZN_DEBUG_NO16BIT)
       pdev->options4.Native16BitShaderOpsSupported = false;
