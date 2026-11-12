@@ -1200,6 +1200,20 @@ dzn_physical_device_create(struct vk_instance *instance,
            pdev->options13.UnrestrictedBufferTextureCopyPitchSupported,
            (dzn_instance->debug_flags & DZN_DEBUG_LEGACY_CAPS) != 0);
 
+   /* Per-format support for the formats paraLLEl-RDP's VI and blit use (Xbox lacks some typed UAV loads). */
+   static const DXGI_FORMAT g64_formats[] = {
+      DXGI_FORMAT_R8G8B8A8_UINT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_TYPELESS,
+      DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R32G32B32A32_SINT, DXGI_FORMAT_R32_UINT,
+      DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R8_UINT,
+   };
+   for (uint32_t i = 0; i < ARRAY_SIZE(g64_formats); i++) {
+      D3D12_FEATURE_DATA_FORMAT_SUPPORT fmt = { .Format = g64_formats[i] };
+      HRESULT hr = ID3D12Device1_CheckFeatureSupport(pdev->dev, D3D12_FEATURE_FORMAT_SUPPORT, &fmt, sizeof(fmt));
+      fprintf(stderr, "G64-DZN-FMT: \"%s\" dxgi=%d hr=0x%08lx support1=0x%08x support2=0x%08x\n",
+              pdev->desc.description, (int)g64_formats[i], (unsigned long)hr,
+              (unsigned)fmt.Support1, (unsigned)fmt.Support2);
+   }
+
    if (dzn_instance->debug_flags & DZN_DEBUG_MULTIVIEW)
       pdev->options3.ViewInstancingTier = D3D12_VIEW_INSTANCING_TIER_NOT_SUPPORTED;
 
