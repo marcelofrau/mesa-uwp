@@ -28,6 +28,27 @@
 #include "vk_format.h"
 #include "vk_util.h"
 
+#include "util/os_misc.h"
+
+/* DZN_G64_DISABLE_FIX=layouts,arrayviews turns the gopher64/Xbox fixes below off for A/B runs. */
+static bool
+dzn_g64_fix_enabled(const char *name)
+{
+   static const char *disabled = (const char *)1;
+   if (disabled == (const char *)1)
+      disabled = os_get_option("DZN_G64_DISABLE_FIX");
+   return !disabled || !strstr(disabled, name);
+}
+
+/* Vulkan *_ARRAY view types are arrays in the shader even with one layer (Texture2DArray in DXIL). */
+static bool
+dzn_g64_view_type_is_array(VkImageViewType type)
+{
+   return dzn_g64_fix_enabled("arrayviews") &&
+          (type == VK_IMAGE_VIEW_TYPE_1D_ARRAY || type == VK_IMAGE_VIEW_TYPE_2D_ARRAY ||
+           type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY);
+}
+
 void
 dzn_image_align_extent(const struct dzn_image *image,
                        VkExtent3D *extent)
@@ -663,8 +684,33 @@ dzn_image_layout_to_state(const struct dzn_image *image,
       return D3D12_RESOURCE_STATE_COMMON;
 
    default:
-      UNREACHABLE("not implemented");
+      break;
    }
+
+   /* synchronization2 layouts (Granite uses them for every render pass). Without these, the legacy
+    * barrier path (no EnhancedBarriers, e.g. Xbox) hit UNREACHABLE = __assume(0) on MSVC. */
+   if (dzn_g64_fix_enabled("layouts")) {
+      switch (layout) {
+      case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL:
+         if (aspect == VK_IMAGE_ASPECT_COLOR_BIT)
+            return type == D3D12_COMMAND_LIST_TYPE_DIRECT ?
+               D3D12_RESOURCE_STATE_RENDER_TARGET : D3D12_RESOURCE_STATE_COMMON;
+         return D3D12_RESOURCE_STATE_DEPTH_WRITE;
+      case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL:
+      case VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL:
+         return aspect == VK_IMAGE_ASPECT_COLOR_BIT ?
+            shaders_access : (D3D12_RESOURCE_STATE_DEPTH_READ | shaders_access);
+      case VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR:
+         return D3D12_RESOURCE_STATE_COMMON;
+      default:
+         break;
+      }
+   }
+
+   static unsigned warned;
+   if (warned++ < 16)
+      fprintf(stderr, "G64-DZN-WARN: dzn_image_layout_to_state: unhandled layout %d, using COMMON\n", (int)layout);
+   return D3D12_RESOURCE_STATE_COMMON;
 }
 
 D3D12_BARRIER_LAYOUT
@@ -1001,7 +1047,8 @@ dzn_image_view_prepare_srv_desc(struct dzn_image_view *iview)
       6 : 1;
    bool from_3d_image = iview->vk.image->image_type == VK_IMAGE_TYPE_3D;
    bool use_array = iview->vk.base_array_layer > 0 ||
-                    (iview->vk.layer_count / layers_per_elem) > 1;
+                    (iview->vk.layer_count / layers_per_elem) > 1 ||
+                    dzn_g64_view_type_is_array(iview->vk.view_type);
 
    iview->srv_desc = (D3D12_SHADER_RESOURCE_VIEW_DESC) {
       .Format =
@@ -1145,7 +1192,8 @@ dzn_image_view_prepare_uav_desc(struct dzn_image_view *iview)
 {
    struct dzn_physical_device *pdev =
       container_of(iview->vk.base.device->physical, struct dzn_physical_device, vk);
-   bool use_array = iview->vk.base_array_layer > 0 || iview->vk.layer_count > 1;
+   bool use_array = iview->vk.base_array_layer > 0 || iview->vk.layer_count > 1 ||
+                    dzn_g64_view_type_is_array(iview->vk.view_type);
 
    assert(iview->vk.image->samples == 1);
 
