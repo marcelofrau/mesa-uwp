@@ -1258,6 +1258,7 @@ enum dzn_debug_flags {
    DZN_DEBUG_EXPERIMENTAL = 1 << 12,
    DZN_DEBUG_MULTIVIEW = 1 << 13,
    DZN_DEBUG_NO16BIT = 1 << 14,
+   DZN_DEBUG_LEGACY_CAPS = 1 << 15,
 };
 
 struct dzn_instance {

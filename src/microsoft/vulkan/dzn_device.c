@@ -190,6 +190,7 @@ static const struct debug_control dzn_debug_options[] = {
    { "experimental", DZN_DEBUG_EXPERIMENTAL },
    { "multiview", DZN_DEBUG_MULTIVIEW },
    { "no16bit", DZN_DEBUG_NO16BIT },
+   { "legacycaps", DZN_DEBUG_LEGACY_CAPS },
    { NULL, 0 }
 };
 
@@ -1185,8 +1186,31 @@ dzn_physical_device_create(struct vk_instance *instance,
    dzn_physical_device_init_memory(pdev);
    dzn_physical_device_init_uuids(pdev);
 
+   /* Raw D3D12 caps that select different Dozen code paths, logged so PC and Xbox runs can be diffed. */
+   fprintf(stderr,
+           "G64-DZN-CAPS: \"%s\" warp=%d fl=0x%x sm=0x%x uma=%d ccuma=%d heap_tier=%d "
+           "typed_uav_load_ext=%d wave=%u-%u native16=%d view_inst_tier=%d cast_fully_typed=%d "
+           "enhanced_barriers=%d relaxed_casting=%d unrestricted_pitch=%d legacycaps=%d\n",
+           pdev->desc.description, pdev->desc.is_warp, pdev->feature_level, pdev->shader_model,
+           pdev->architecture.UMA, pdev->architecture.CacheCoherentUMA, pdev->options.ResourceHeapTier,
+           pdev->options.TypedUAVLoadAdditionalFormats, pdev->options1.WaveLaneCountMin,
+           pdev->options1.WaveLaneCountMax, pdev->options4.Native16BitShaderOpsSupported,
+           pdev->options3.ViewInstancingTier, pdev->options3.CastingFullyTypedFormatSupported,
+           pdev->options12.EnhancedBarriersSupported, pdev->options12.RelaxedFormatCastingSupported,
+           pdev->options13.UnrestrictedBufferTextureCopyPitchSupported,
+           (dzn_instance->debug_flags & DZN_DEBUG_LEGACY_CAPS) != 0);
+
    if (dzn_instance->debug_flags & DZN_DEBUG_MULTIVIEW)
       pdev->options3.ViewInstancingTier = D3D12_VIEW_INSTANCING_TIER_NOT_SUPPORTED;
+
+   /* Reproduce an older D3D12 runtime (assumed Xbox UWP) on a modern PC: legacy barriers,
+    * typeless mutable images and 256-byte copy pitch. Check G64-DZN-CAPS on Xbox to confirm. */
+   if (dzn_instance->debug_flags & DZN_DEBUG_LEGACY_CAPS) {
+      pdev->options3.CastingFullyTypedFormatSupported = false;
+      pdev->options12.EnhancedBarriersSupported = false;
+      pdev->options12.RelaxedFormatCastingSupported = false;
+      pdev->options13.UnrestrictedBufferTextureCopyPitchSupported = false;
+   }
 
    /* Reproduce GPUs without native 16-bit ops (e.g. Xbox) on any device */
    if (dzn_instance->debug_flags & DZN_DEBUG_NO16BIT)
